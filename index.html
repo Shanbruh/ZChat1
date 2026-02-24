@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZChat - Peer-to-Peer Chat</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <link rel="manifest" href="/ZChat/manifest.json">
+  <style>
+    :root {
+      --primary: #3b82f6;
+      --secondary: #10b981;
+      --dark: #1e293b;
+      --light: #f8fafc;
+    }
+    .dark {
+      --primary: #60a5fa;
+      --secondary: #34d399;
+      --dark: #0f172a;
+      --light: #334155;
+    }
+    body {
+      background-color: var(--light);
+      color: var(--dark);
+    }
+    .dark body {
+      background-color: var(--dark);
+      color: var(--light);
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+  <!-- Auth Modal -->
+  <div id="authModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white dark:bg-gray-800 p-6 rounded-lg w-80">
+      <h2 class="text-xl font-bold mb-4">Welcome to ZChat</h2>
+      <input id="userName" placeholder="Your Name" class="w-full p-2 mb-2 border rounded">
+      <input id="userId" placeholder="Your ZChat ID" class="w-full p-2 mb-2 border rounded">
+      <input id="userPassword" type="password" placeholder="Password" class="w-full p-2 mb-4 border rounded">
+      <button id="loginBtn" class="w-full bg-blue-500 text-white p-2 rounded">Login</button>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app" class="hidden flex flex-col h-screen">
+    <!-- Header -->
+    <header class="bg-blue-500 text-white p-4 flex justify-between items-center">
+      <h1 class="text-xl font-bold">ZChat</h1>
+      <div class="flex items-center">
+        <button id="themeToggle" class="mr-4">🌓</button>
+        <img id="profilePic" src="https://via.placeholder.com/40" class="rounded-full">
+      </div>
+    </header>
+
+    <!-- Contacts & Chats -->
+    <div class="flex flex-1 overflow-hidden">
+      <!-- Contacts Sidebar -->
+      <aside class="w-64 bg-gray-100 dark:bg-gray-900 p-4 overflow-y-auto">
+        <h2 class="font-bold mb-4">Contacts</h2>
+        <input id="addContactInput" placeholder="Add by Peer ID" class="w-full p-2 mb-2 border rounded">
+        <button id="addContactBtn" class="w-full bg-green-500 text-white p-2 rounded mb-4">Add</button>
+        <div id="contactsList" class="space-y-2"></div>
+      </aside>
+
+      <!-- Chat Area -->
+      <main class="flex-1 flex flex-col bg-gray-50 dark:bg-gray-800">
+        <div id="chatHeader" class="p-4 border-b dark:border-gray-700 flex justify-between items-center">
+          <div>
+            <h2 id="chatTitle" class="font-bold">Select a chat</h2>
+            <p id="chatStatus" class="text-sm text-gray-500">Offline</p>
+          </div>
+          <div>
+            <button id="muteBtn" class="mr-2">🔔</button>
+            <button id="callBtn" class="mr-2">📞</button>
+            <button id="videoCallBtn">📹</button>
+          </div>
+        </div>
+        <div id="messages" class="flex-1 p-4 overflow-y-auto space-y-2"></div>
+        <div class="p-4 border-t dark:border-gray-700 flex items-center">
+          <button id="attachBtn" class="mr-2">📎</button>
+          <button id="recordBtn" class="mr-2">🎤</button>
+          <input id="messageInput" placeholder="Type a message..." class="flex-1 p-2 border rounded">
+          <button id="sendBtn" class="ml-2 bg-blue-500 text-white p-2 rounded">Send</button>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Firebase & PeerJS -->
+  <script type="module">
+    // Firebase
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
+
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_AUTH_DOMAIN",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_STORAGE_BUCKET",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID",
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const messaging = getMessaging(app);
+
+    // Request notification permission and get FCM token
+    function requestPermission() {
+      Notification.requestPermission().then((permission) => {
+        if (permission === "granted") {
+          getToken(messaging, { vapidKey: "YOUR_VAPID_KEY" })
+            .then((token) => {
+              console.log("FCM Token:", token);
+              localStorage.setItem("fcmToken", token);
+            })
+            .catch((err) => console.error("FCM Token Error:", err));
+        }
+      });
+    }
+    requestPermission();
+
+    // Handle foreground messages
+    onMessage(messaging, (payload) => {
+      console.log("Foreground Message:", payload);
+      showInAppNotification(payload);
+    });
+
+    function showInAppNotification(payload) {
+      const chatId = payload.data.chatId;
+      const message = payload.notification.body;
+      const chatElement = document.querySelector(`[data-chat-id="${chatId}"]`);
+      if (chatElement) {
+        const badge = chatElement.querySelector(".badge");
+        const count = parseInt(badge.textContent) || 0;
+        badge.textContent = count + 1;
+      }
+      // Show toast notification
+      const toast = document.createElement("div");
+      toast.className = "fixed bottom-4 right-4 bg-blue-500 text-white p-4 rounded shadow-lg";
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+
+    // PeerJS
+    import { Peer } from "https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js";
+
+    let peer;
+    let currentChatPeerId;
+
+    // Initialize PeerJS
+    function initPeer(userId) {
+      peer = new Peer(userId);
+      peer.on("open", (id) => {
+        console.log("PeerJS ID:", id);
+        document.getElementById("app").classList.remove("hidden");
+        document.getElementById("authModal").classList.add("hidden");
+      });
+      peer.on("connection", (conn) => {
+        conn.on("data", (data) => {
+          console.log("Received:", data);
+          if (data.type === "message") {
+            appendMessage(data.sender, data.message, "received");
+          }
+        });
+      });
+      peer.on("call", (call) => {
+        call.answer();
+        call.on("stream", (stream) => {
+          const audio = new Audio();
+          audio.srcObject = stream;
+          audio.play();
+        });
+      });
+    }
+
+    // UI Logic
+    document.getElementById("loginBtn").addEventListener("click", () => {
+      const userName = document.getElementById("userName").value;
+      const userId = document.getElementById("userId").value;
+      if (userName && userId) {
+        localStorage.setItem("userName", userName);
+        localStorage.setItem("userId", userId);
+        initPeer(userId);
+      }
+    });
+
+    document.getElementById("themeToggle").addEventListener("click", () => {
+      document.body.classList.toggle("dark");
+    });
+
+    document.getElementById("sendBtn").addEventListener("click", () => {
+      const message = document.getElementById("messageInput").value;
+      if (message && currentChatPeerId) {
+        const conn = peer.connect(currentChatPeerId);
+        conn.on("open", () => {
+          conn.send({ type: "message", sender: peer.id, message });
+          appendMessage(peer.id, message, "sent");
+          document.getElementById("messageInput").value = "";
+        });
+      }
+    });
+
+    function appendMessage(sender, message, type) {
+      const messagesDiv = document.getElementById("messages");
+      const messageDiv = document.createElement("div");
+      messageDiv.className = `flex ${type === "sent" ? "justify-end" : "justify-start"} mb-2`;
+      messageDiv.innerHTML = `
+        <div class="max-w-xs p-3 rounded-lg ${type === "sent" ? "bg-blue-500 text-white" : "bg-gray-200 dark:bg-gray-700"}">
+          <p>${message}</p>
+          <small class="text-xs opacity-70">${new Date().toLocaleTimeString()}</small>
+        </div>
+      `;
+      messagesDiv.appendChild(messageDiv);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    // Register service worker
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/ZChat/firebase-messaging-sw.js")
+        .then((registration) => console.log("SW Registered:", registration))
+        .catch((err) => console.error("SW Registration Failed:", err));
+    }
+  </script>
+</body>
+</html>
